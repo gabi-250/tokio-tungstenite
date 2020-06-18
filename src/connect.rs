@@ -30,6 +30,7 @@ pub(crate) mod encryption {
         socket: S,
         domain: String,
         mode: Mode,
+        accept_invalid_certs: bool,
     ) -> Result<AutoStream<S>, Error>
     where
         S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
@@ -37,7 +38,10 @@ pub(crate) mod encryption {
         match mode {
             Mode::Plain => Ok(StreamSwitcher::Plain(socket)),
             Mode::Tls => {
-                let try_connector = TlsConnector::new();
+                let try_connector = TlsConnector::builder()
+                    .danger_accept_invalid_certs(accept_invalid_certs)
+                    .build();
+
                 let connector = try_connector.map_err(Error::Tls)?;
                 let stream = TokioTlsConnector::from(connector);
                 let connected = stream.connect(&domain, socket).await;
@@ -66,6 +70,7 @@ pub(crate) mod encryption {
         socket: S,
         _domain: String,
         mode: Mode,
+        _accept_invalid_certs: bool,
     ) -> Result<AutoStream<S>, Error>
     where
         S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
@@ -93,13 +98,14 @@ fn domain(request: &Request) -> Result<String, Error> {
 pub async fn client_async_tls<R, S>(
     request: R,
     stream: S,
+    accept_invalid_certs: bool,
 ) -> Result<(WebSocketStream<AutoStream<S>>, Response), Error>
 where
     R: IntoClientRequest + Unpin,
     S: 'static + AsyncRead + AsyncWrite + Send + Unpin,
     AutoStream<S>: Unpin,
 {
-    client_async_tls_with_config(request, stream, None).await
+    client_async_tls_with_config(request, stream, None, accept_invalid_certs).await
 }
 
 /// The same as `client_async_tls()` but the one can specify a websocket configuration.
@@ -107,7 +113,8 @@ where
 pub async fn client_async_tls_with_config<R, S>(
     request: R,
     stream: S,
-    config: Option<WebSocketConfig>
+    config: Option<WebSocketConfig>,
+    accept_invalid_certs: bool,
 ) -> Result<(WebSocketStream<AutoStream<S>>, Response), Error>
 where
     R: IntoClientRequest + Unpin,
@@ -121,13 +128,13 @@ where
     // Make sure we check domain and mode first. URL must be valid.
     let mode = uri_mode(&request.uri())?;
 
-    let stream = wrap_stream(stream, domain, mode).await?;
+    let stream = wrap_stream(stream, domain, mode, accept_invalid_certs).await?;
     client_async_with_config(request, stream, config).await
 }
 
 /// Connect to a given URL.
 pub async fn connect_async<R>(
-    request: R
+    request: R,
 ) -> Result<(WebSocketStream<AutoStream<TcpStream>>, Response), Error>
 where
     R: IntoClientRequest + Unpin,
@@ -139,7 +146,7 @@ where
 /// Please refer to `connect_async()` for more details.
 pub async fn connect_async_with_config<R>(
     request: R,
-    config: Option<WebSocketConfig>
+    config: Option<WebSocketConfig>,
 ) -> Result<(WebSocketStream<AutoStream<TcpStream>>, Response), Error>
 where
     R: IntoClientRequest + Unpin,
@@ -160,5 +167,5 @@ where
     let addr = format!("{}:{}", domain, port);
     let try_socket = TcpStream::connect(addr).await;
     let socket = try_socket.map_err(Error::Io)?;
-    client_async_tls_with_config(request, socket, config).await
+    client_async_tls_with_config(request, socket, config, false).await
 }

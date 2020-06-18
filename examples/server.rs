@@ -25,12 +25,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use futures_util::{
-    future, pin_mut,
-    stream::TryStreamExt,
-    StreamExt,
-};
 use futures_channel::mpsc::{unbounded, UnboundedSender};
+use futures_util::{future, pin_mut, stream::TryStreamExt, StreamExt};
 
 use tokio::net::{TcpListener, TcpStream};
 use tungstenite::protocol::Message;
